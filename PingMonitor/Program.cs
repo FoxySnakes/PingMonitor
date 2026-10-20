@@ -1,18 +1,15 @@
-namespace PingMonitor
-{
-    internal static class Program
-    {
-        /// <summary>
-        ///  The main entry point for the application.
-        /// </summary>
-        [STAThread]
-        static void Main()
-        {
-            Application.EnableVisualStyles();
-            Application.SetCompatibleTextRenderingDefault(false);
+namespace PingMonitor;
 
-            // Lance l'application sans fenêtre visible
-            Application.Run(new MainForm());
-        }
+internal static class Program
+{
+    [STAThread]
+    static void Main()
+    {
+        using var instance = new Mutex(true, @"Local\PingMonitor", out bool firstInstance);
+        if (!firstInstance) return;
+        Application.EnableVisualStyles();
+        Application.SetCompatibleTextRenderingDefault(false);
+        using var form = new MainForm();
+        Application.Run(form);
     }
 }

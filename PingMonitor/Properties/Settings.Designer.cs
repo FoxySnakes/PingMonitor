@@ -34,5 +34,13 @@ namespace PingMonitor.Properties {
                 this["ColorMode"] = value;
             }
         }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("False")]
+        public bool UseBits {
+            get { return ((bool)(this["UseBits"])); }
+            set { this["UseBits"] = value; }
+        }
     }
 }

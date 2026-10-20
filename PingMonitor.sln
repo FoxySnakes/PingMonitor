@@ -1,23 +1,54 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
-VisualStudioVersion = 17.13.35818.85 d17.13
+VisualStudioVersion = 17.13.35818.85
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PingMonitor", "PingMonitor\PingMonitor.csproj", "{20B017EB-CA59-4AC2-999B-BBAC05B834BE}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{0AB3BF05-4346-4AA6-1389-037BE0695223}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PingMonitor.Checks", "tests\PingMonitor.Checks.csproj", "{91B7A57C-6D35-4591-8C0A-2F42657069BB}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
+		Debug|x64 = Debug|x64
+		Debug|x86 = Debug|x86
 		Release|Any CPU = Release|Any CPU
+		Release|x64 = Release|x64
+		Release|x86 = Release|x86
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
 		{20B017EB-CA59-4AC2-999B-BBAC05B834BE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{20B017EB-CA59-4AC2-999B-BBAC05B834BE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{20B017EB-CA59-4AC2-999B-BBAC05B834BE}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{20B017EB-CA59-4AC2-999B-BBAC05B834BE}.Debug|x64.Build.0 = Debug|Any CPU
+		{20B017EB-CA59-4AC2-999B-BBAC05B834BE}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{20B017EB-CA59-4AC2-999B-BBAC05B834BE}.Debug|x86.Build.0 = Debug|Any CPU
 		{20B017EB-CA59-4AC2-999B-BBAC05B834BE}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{20B017EB-CA59-4AC2-999B-BBAC05B834BE}.Release|Any CPU.Build.0 = Release|Any CPU
+		{20B017EB-CA59-4AC2-999B-BBAC05B834BE}.Release|x64.ActiveCfg = Release|Any CPU
+		{20B017EB-CA59-4AC2-999B-BBAC05B834BE}.Release|x64.Build.0 = Release|Any CPU
+		{20B017EB-CA59-4AC2-999B-BBAC05B834BE}.Release|x86.ActiveCfg = Release|Any CPU
+		{20B017EB-CA59-4AC2-999B-BBAC05B834BE}.Release|x86.Build.0 = Release|Any CPU
+		{91B7A57C-6D35-4591-8C0A-2F42657069BB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{91B7A57C-6D35-4591-8C0A-2F42657069BB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{91B7A57C-6D35-4591-8C0A-2F42657069BB}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{91B7A57C-6D35-4591-8C0A-2F42657069BB}.Debug|x64.Build.0 = Debug|Any CPU
+		{91B7A57C-6D35-4591-8C0A-2F42657069BB}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{91B7A57C-6D35-4591-8C0A-2F42657069BB}.Debug|x86.Build.0 = Debug|Any CPU
+		{91B7A57C-6D35-4591-8C0A-2F42657069BB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{91B7A57C-6D35-4591-8C0A-2F42657069BB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{91B7A57C-6D35-4591-8C0A-2F42657069BB}.Release|x64.ActiveCfg = Release|Any CPU
+		{91B7A57C-6D35-4591-8C0A-2F42657069BB}.Release|x64.Build.0 = Release|Any CPU
+		{91B7A57C-6D35-4591-8C0A-2F42657069BB}.Release|x86.ActiveCfg = Release|Any CPU
+		{91B7A57C-6D35-4591-8C0A-2F42657069BB}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{91B7A57C-6D35-4591-8C0A-2F42657069BB} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {603B6430-993C-4FA6-AD90-F736C7F2F2DB}

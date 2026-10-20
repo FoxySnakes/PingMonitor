@@ -1,247 +1,246 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Net.NetworkInformation;
-using System.Text;
-using System.Threading.Tasks;
-using System.Timers;
+using System.Runtime.InteropServices;
 
-namespace PingMonitor
+namespace PingMonitor;
+
+public class MainForm : Form
 {
-    public class MainForm : Form
+    private readonly NotifyIcon trayIcon;
+    private readonly Icon applicationIcon;
+    private readonly System.Windows.Forms.Timer updateTimer;
+    private readonly NetworkSpeedMonitor speedMonitor = new();
+    private readonly StartupRegistration startup = new(Application.ExecutablePath);
+    private readonly IPingProbe pingProbe;
+    private Icon? currentIcon;
+    private EnumColorType _currentColorType;
+    private bool _isPaused;
+    private bool updating;
+    private bool disposed;
+    private long? lastPing;
+    private double downloadKbps;
+    private double uploadKbps;
+    private bool useBits = Properties.Settings.Default.UseBits;
+
+    public MainForm() : this(new NetworkPingProbe()) { }
+
+    internal MainForm(IPingProbe pingProbe)
     {
-        private NotifyIcon trayIcon;
-        private System.Timers.Timer updateTimer;
-
-        private EnumColorType _currentColorType;
-        private bool _isPaused;
-
-        public MainForm()
+        this.pingProbe = pingProbe;
+        using (var stream = typeof(MainForm).Assembly.GetManifestResourceStream("PingMonitor.AppIcon.ico")!)
+        using (var sourceIcon = new Icon(stream, new Size(32, 32)))
+            applicationIcon = (Icon)sourceIcon.Clone();
+        Icon = applicationIcon;
+        ShowInTaskbar = false;
+        trayIcon = new NotifyIcon
         {
-            trayIcon = new NotifyIcon
+            Icon = applicationIcon,
+            Visible = true,
+            Text = "PingMonitor : mesure en cours…"
+        };
+        trayIcon.ContextMenuStrip = GetContextMenu();
+
+        // Le timer Windows garde toutes les mises à jour de l'icône sur le thread UI.
+        updateTimer = new System.Windows.Forms.Timer { Interval = 100 };
+        updateTimer.Tick += async (_, _) =>
+        {
+            updateTimer.Interval = 2000;
+            await UpdateNetworkInfoAsync();
+        };
+        updateTimer.Start();
+    }
+
+    protected override void SetVisibleCore(bool value) => base.SetVisibleCore(false);
+
+    private ContextMenuStrip GetContextMenu()
+    {
+        var menu = new ContextMenuStrip();
+        var pauseItem = new ToolStripMenuItem("Mettre en pause");
+        pauseItem.Click += async (_, _) =>
+        {
+            _isPaused = !_isPaused;
+            updateTimer.Enabled = !_isPaused;
+            pauseItem.Text = _isPaused ? "Reprendre" : "Mettre en pause";
+            if (_isPaused)
             {
-                Icon = SystemIcons.Information,
-                Visible = true,
-                Text = "Chargement..."
+                SetIcon(CreateTextIcon("Ⅱ", _currentColorType == EnumColorType.Background ? Color.DimGray : Color.Transparent, Color.White));
+                trayIcon.Text = "PingMonitor : en pause";
+            }
+            else
+            {
+                speedMonitor.Reset();
+                await UpdateNetworkInfoAsync();
+            }
+        };
+        menu.Items.Add(pauseItem);
+
+        var colors = new ToolStripMenuItem("Mode de couleur");
+        var options = new Dictionary<ToolStripMenuItem, EnumColorType>
+        {
+            [new ToolStripMenuItem("Aucune")] = EnumColorType.No,
+            [new ToolStripMenuItem("Couleur du texte")] = EnumColorType.Text,
+            [new ToolStripMenuItem("Couleur de fond")] = EnumColorType.Background
+        };
+        int savedMode = Properties.Settings.Default.ColorMode;
+        _currentColorType = Enum.IsDefined(typeof(EnumColorType), savedMode) ? (EnumColorType)savedMode : EnumColorType.No;
+        foreach (var (item, mode) in options)
+        {
+            item.Checked = mode == _currentColorType;
+            item.Click += (_, _) =>
+            {
+                foreach (var other in options.Keys) other.Checked = other == item;
+                _currentColorType = mode;
+                Properties.Settings.Default.ColorMode = (int)mode;
+                Properties.Settings.Default.Save();
+                if (!_isPaused) RenderMeasurements();
             };
-
-            var contextMenu = GetContextMenu();
-            // Appliquer au NotifyIcon
-            trayIcon.ContextMenuStrip = contextMenu;
-
-            // Timer : toutes les 5 secondes
-            updateTimer = new System.Timers.Timer(5000);
-            updateTimer.Elapsed += UpdateNetworkInfo;
-            updateTimer.Start();
-            UpdateNetworkInfo(this, null);
-
-            // Cache la fenêtre principale
-            this.WindowState = FormWindowState.Minimized;
-            this.ShowInTaskbar = false;
+            colors.DropDownItems.Add(item);
         }
-
-        private ContextMenuStrip GetContextMenu()
+        menu.Items.Add(colors);
+        var units = new ToolStripMenuItem("Unité du débit");
+        var bytesItem = new ToolStripMenuItem("Octets (ko/s, Mo/s)") { Checked = !useBits };
+        var bitsItem = new ToolStripMenuItem("Bits (kb/s, Mb/s)") { Checked = useBits };
+        void SelectUnits(bool bits)
         {
-            // === Menu contextuel principal ===
-            ContextMenuStrip contextMenu = new ContextMenuStrip();
-
-            // → 1. Rafraîchir manuellement
-            contextMenu.Items.Add("Rafraîchir", null, (s, e) =>
+            useBits = bits;
+            bytesItem.Checked = !bits;
+            bitsItem.Checked = bits;
+            Properties.Settings.Default.UseBits = bits;
+            Properties.Settings.Default.Save();
+            if (!_isPaused) RenderMeasurements();
+        }
+        bytesItem.Click += (_, _) => SelectUnits(false);
+        bitsItem.Click += (_, _) => SelectUnits(true);
+        units.DropDownItems.AddRange(new ToolStripItem[] { bytesItem, bitsItem });
+        menu.Items.Add(units);
+        var startupItem = new ToolStripMenuItem("Démarrer avec Windows") { Checked = startup.IsEnabled };
+        startupItem.Click += (_, _) =>
+        {
+            try
             {
-                UpdateNetworkInfo(this, null);
-            });
-
-            // → 2. Pause / Reprendre
-            ToolStripMenuItem pauseItem = new ToolStripMenuItem("Mettre en pause");
-            pauseItem.Click += (s, e) =>
+                startup.SetEnabled(!startup.IsEnabled);
+                startupItem.Checked = startup.IsEnabled;
+            }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException or IOException)
             {
-                _isPaused = !_isPaused;
-                updateTimer.Enabled = !_isPaused;
-                pauseItem.Text = _isPaused ? "Reprendre" : "Mettre en pause";
+                MessageBox.Show("Impossible de modifier le démarrage automatique : " + ex.Message, "PingMonitor", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        };
+        menu.Opening += (_, _) => startupItem.Checked = startup.IsEnabled;
+        menu.Items.Add(startupItem);
+        menu.Items.Add("Quitter", null, (_, _) => Application.Exit());
+        return menu;
+    }
 
-                if (_isPaused)
+    private async Task UpdateNetworkInfoAsync()
+    {
+        if (_isPaused || updating || disposed) return;
+        updating = true;
+        try
+        {
+            // Une cible ICMP bloquée ne doit pas masquer une connexion fonctionnelle.
+            var result = await pingProbe.MeasureAsync();
+            if (_isPaused || disposed) return;
+            lastPing = result.Ping;
+            (downloadKbps, uploadKbps) = speedMonitor.Sample();
+            RenderMeasurements();
+        }
+        catch (Exception)
+        {
+            if (!disposed && !_isPaused)
+            {
+                SetIcon(CreateTextIcon("!", _currentColorType == EnumColorType.Background ? Color.DarkRed : Color.Transparent, Color.White));
+                trayIcon.Text = "PingMonitor : erreur de mesure";
+            }
+        }
+        finally { updating = false; }
+    }
+
+    private void RenderMeasurements()
+    {
+        Color background = Color.Transparent;
+        Color foreground = Color.White;
+        if (_currentColorType == EnumColorType.Background)
+        {
+            background = lastPing switch { null => Color.DimGray, <= 50 => Color.ForestGreen, <= 100 => Color.Gold, <= 200 => Color.Orange, _ => Color.DarkRed };
+            if (lastPing is > 50 and <= 200) foreground = Color.Black;
+        }
+        if (_currentColorType == EnumColorType.Text)
+            foreground = lastPing switch { null => Color.LightGray, <= 50 => Color.LightGreen, <= 100 => Color.Gold, <= 200 => Color.Orange, _ => Color.Salmon };
+        SetIcon(CreateTextIcon(lastPing?.ToString() ?? "N/A", background, foreground));
+        string latency = lastPing.HasValue ? $"{lastPing} ms" : "N/A (pas de réponse ICMP)";
+        string speeds = $"↓ {SpeedFormatter.Format(downloadKbps, useBits)} | ↑ {SpeedFormatter.Format(uploadKbps, useBits)}";
+        trayIcon.Text = $"Ping : {latency}\n{speeds}";
+    }
+
+    private void SetIcon(Icon icon)
+    {
+        trayIcon.Icon = icon;
+        currentIcon?.Dispose();
+        currentIcon = icon;
+    }
+
+    private static Icon CreateTextIcon(string text, Color background, Color foreground)
+    {
+        const int iconSize = 16;
+        using var bitmap = new Bitmap(iconSize, iconSize);
+        using var mask = new Bitmap(iconSize, iconSize);
+        const TextFormatFlags flags = TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter |
+            TextFormatFlags.NoPadding | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix;
+        float fontSize = 12;
+        using (var graphics = Graphics.FromImage(mask))
+        {
+            graphics.Clear(Color.Black);
+            graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+            Font font = new Font("Segoe UI", fontSize, FontStyle.Regular, GraphicsUnit.Pixel);
+            try
+            {
+                while (fontSize > 7 && TextRenderer.MeasureText(graphics, text, font, Size.Empty, flags).Width > iconSize)
                 {
-                    trayIcon.Icon = CreatePauseIcon();
-                    trayIcon.Text = "Pause activée – Ping en veille";
+                    font.Dispose();
+                    font = new Font("Segoe UI", --fontSize, FontStyle.Regular, GraphicsUnit.Pixel);
                 }
+                TextRenderer.DrawText(graphics, text, font, new Rectangle(0, 0, iconSize, iconSize), Color.White, Color.Black, flags);
+            }
+            finally { font.Dispose(); }
+        }
+        // Convertir le masque GDI en alpha pour conserver un vrai fond transparent.
+        for (int y = 0; y < iconSize; y++)
+            for (int x = 0; x < iconSize; x++)
+            {
+                Color pixel = mask.GetPixel(x, y);
+                int coverage = Math.Max(pixel.R, Math.Max(pixel.G, pixel.B));
+                if (background.A == 0)
+                    bitmap.SetPixel(x, y, Color.FromArgb(coverage, foreground));
                 else
-                    UpdateNetworkInfo(this, null);
-            };
-            contextMenu.Items.Add(pauseItem);
-
-            // → 3. Enum de types de couleur
-            ToolStripMenuItem colorTypeMenu = new ToolStripMenuItem("Mode de couleur");
-
-            // Création des items radio
-            ToolStripMenuItem noColor = new ToolStripMenuItem("Aucune") { CheckOnClick = true };
-            ToolStripMenuItem textColor = new ToolStripMenuItem("Couleur du texte") { CheckOnClick = true };
-            ToolStripMenuItem bgColor = new ToolStripMenuItem("Couleur de fond") { CheckOnClick = true };
-
-            var colorItems = new Dictionary<ToolStripMenuItem, EnumColorType>
-            {
-                { noColor, EnumColorType.No },
-                { textColor, EnumColorType.Text },
-                { bgColor, EnumColorType.Background }
-            };
-
-            // Gère la sélection unique + met à jour le _currentColorType actuel
-            foreach (var kvp in colorItems)
-            {
-                kvp.Key.Click += (s, e) =>
-                {
-                    foreach (var other in colorItems.Keys)
-                        other.Checked = (other == s);
-
-                    _currentColorType = colorItems[(ToolStripMenuItem)s];
-
-                    // (optionnel) enregistrer en settings
-                    Properties.Settings.Default.ColorMode = (int)_currentColorType;
-                    Properties.Settings.Default.Save();
-
-                    UpdateNetworkInfo(null, null); // Mise à jour immédiate
-                };
+                    bitmap.SetPixel(x, y, Color.FromArgb(
+                        (foreground.R * coverage + background.R * (255 - coverage)) / 255,
+                        (foreground.G * coverage + background.G * (255 - coverage)) / 255,
+                        (foreground.B * coverage + background.B * (255 - coverage)) / 255));
             }
-
-            // Charger l'état sauvegardé au démarrage
-            if (Enum.IsDefined(typeof(EnumColorType), Properties.Settings.Default.ColorMode))
-            {
-                _currentColorType = (EnumColorType)Properties.Settings.Default.ColorMode;
-                var selectedItem = colorItems.FirstOrDefault(kvp => kvp.Value == _currentColorType).Key;
-                if (selectedItem != null) selectedItem.Checked = true;
-            }
-
-            // Ajouter au sous-menu
-            colorTypeMenu.DropDownItems.AddRange(colorItems.Keys.ToArray());
-            contextMenu.Items.Add(colorTypeMenu);
-
-            // → 4. Quitter
-            contextMenu.Items.Add("Quitter", null, (s, e) =>
-            {
-                if (MessageBox.Show("Quitter l'application ?", "Confirmation", MessageBoxButtons.YesNo) == DialogResult.Yes)
-                    Application.Exit();
-            });
-
-            return contextMenu;
-        }
-
-        private void UpdateNetworkInfo(object sender, ElapsedEventArgs e)
+        IntPtr handle = bitmap.GetHicon();
+        try
         {
-            if (_isPaused) return;
-
-            try
-            {
-                long? ping = GetPing("8.8.8.8");
-
-                trayIcon.Icon = CreateTextIcon(ping);
-
-                trayIcon.Text = $"Ping: {ping} ms\n↓ {GetSpeed("download")} Kbps | ↑ {GetSpeed("upload")} Kbps";
-
-                string downSpeed = GetSpeed("download") + " Kbps";
-                string upSpeed = GetSpeed("upload") + " Kbps";
-
-                trayIcon.Text = $"Ping: {(ping == null ? "N/A" : ping.ToString())}\n↓ {downSpeed} | ↑ {upSpeed}";
-            }
-            catch
-            {
-                trayIcon.Text = "Erreur de mesure réseau.";
-            }
+            using var borrowed = Icon.FromHandle(handle);
+            return (Icon)borrowed.Clone();
         }
+        finally { DestroyIcon(handle); }
+    }
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool DestroyIcon(IntPtr handle);
 
-        private long? GetPing(string host)
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing && !disposed)
         {
-            try
-            {
-                using (var ping = new Ping())
-                {
-                    var reply = ping.Send(host, 1000); // 1 sec timeout
-                    if (reply.Status == IPStatus.Success)
-                        return reply.RoundtripTime;
-                }
-            }
-            catch { }
-
-            return null;
-        }
-
-
-        private string GetSpeed(string type)
-        {
-            return "0"; // TODO
-        }
-
-
-        protected override void OnFormClosing(FormClosingEventArgs e)
-        {
+            disposed = true;
+            updateTimer.Stop();
+            updateTimer.Dispose();
             trayIcon.Visible = false;
-            base.OnFormClosing(e);
+            trayIcon.ContextMenuStrip?.Dispose();
+            trayIcon.Dispose();
+            currentIcon?.Dispose();
+            applicationIcon.Dispose();
         }
-
-        private Icon CreateTextIcon(long? ping)
-        {
-            Bitmap bitmap = new Bitmap(32, 32);
-            using (Graphics g = Graphics.FromImage(bitmap))
-            {
-                Color bgColor = Color.Transparent;
-                Brush textBrush = Brushes.Black;
-
-                if (ping == null)
-                {
-                    if (_currentColorType == EnumColorType.Background) bgColor = Color.Black;
-                    if (_currentColorType == EnumColorType.Text) textBrush = Brushes.Gray;
-                }
-                else
-                {
-                    if (_currentColorType == EnumColorType.Background)
-                    {
-                        if (ping <= 50) bgColor = Color.ForestGreen;
-                        else if (ping <= 100) bgColor = Color.Gold;
-                        else if (ping <= 200) bgColor = Color.Orange;
-                        else bgColor = Color.Red;
-                    }
-
-                    if (_currentColorType == EnumColorType.Text)
-                    {
-                        if (ping <= 50) textBrush = Brushes.Green;
-                        else if (ping <= 100) textBrush = Brushes.Goldenrod;
-                        else if (ping <= 200) textBrush = Brushes.Orange;
-                        else textBrush = Brushes.Red;
-                    }
-                }
-
-                g.Clear(bgColor);
-
-                int fontSize = (ping == null || ping.ToString().Length > 2) ? 16 : 22;
-
-                using (Font font = new Font("Segoe UI", fontSize, FontStyle.Regular, GraphicsUnit.Pixel))
-                {
-                    var format = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-                    g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
-                    g.DrawString(ping == null ? "N/A" : ping.ToString(), font, textBrush, new RectangleF(0, 0, 32, 32), format);
-                }
-            }
-
-            IntPtr hIcon = bitmap.GetHicon();
-            Icon icon = Icon.FromHandle(hIcon);
-            return icon;
-        }
-
-        private Icon CreatePauseIcon()
-        {
-            Bitmap bitmap = new Bitmap(32, 32);
-            using (Graphics g = Graphics.FromImage(bitmap))
-            {
-                g.Clear(Color.LightGray); // Fond neutre
-
-                using (Pen pen = new Pen(Color.Black, 5))
-                {
-                    g.DrawLine(pen, 10, 8, 10, 24); // barre gauche
-                    g.DrawLine(pen, 20, 8, 20, 24); // barre droite
-                }
-            }
-
-            IntPtr hIcon = bitmap.GetHicon();
-            return Icon.FromHandle(hIcon);
-        }
-
+        base.Dispose(disposing);
     }
 }

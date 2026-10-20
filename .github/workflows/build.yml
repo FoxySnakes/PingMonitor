@@ -1,0 +1,39 @@
+name: Build and check
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: Set up .NET
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: Build (warnings are errors)
+        run: dotnet build PingMonitor.sln -c Release --warnaserror
+      - name: Run checks without external network probes
+        run: dotnet run --project tests/PingMonitor.Checks.csproj -c Release --no-build
+      - name: Publish Windows x64
+        run: dotnet publish PingMonitor/PingMonitor.csproj -c Release -r win-x64 --self-contained true -o artifacts/publish -p:PublishSingleFile=true
+      - name: Include icon
+        run: Copy-Item PingMonitor/Assets/PingMonitor.ico artifacts/publish/PingMonitor.ico
+      - name: Upload portable build
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: PingMonitor-win-x64
+          path: artifacts/publish/
+          if-no-files-found: error
+          retention-days: 14

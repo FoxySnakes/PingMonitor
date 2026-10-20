@@ -2,11 +2,20 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net9.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationIcon>Assets\PingMonitor.ico</ApplicationIcon>
+    <Version>1.0.0</Version>
+    <Description>Moniteur de ping et de trafic réseau dans la zone de notification Windows.</Description>
+    <RepositoryUrl>https://github.com/FoxySnakes/PingMonitor</RepositoryUrl>
+    <DebugType>embedded</DebugType>
   </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\PingMonitor.ico" LogicalName="PingMonitor.AppIcon.ico" />
+  </ItemGroup>
 
   <ItemGroup>
     <Compile Update="Properties\Settings.Designer.cs">
